@@ -6,8 +6,36 @@ Guia prático e scripts automatizados para instalar, configurar e usar o **[REA 
 
 ---
 
+## Instalação rápida em um PC novo (1 comando)
+
+Abra o **PowerShell** e rode:
+
+```powershell
+git clone https://github.com/rafaelpflugh-glitch/eng.-reversa.git
+cd eng.-reversa
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+.\setup-all.ps1
+```
+
+O `setup-all.ps1` cuida de tudo em sequência (e pode ser rodado novamente sem problema caso o Windows peça para reiniciar após instalar o Node.js ou o WSL):
+1. Verifica/instala **Node.js** suportado, instala `rea-agents` globalmente e configura o MCP no **Antigravity**.
+2. Verifica/instala o **WSL 2 + Ubuntu 24.04** e define como padrão.
+3. Dentro do Ubuntu 24.04, instala **Node 24**, **REA**, **Ghidra 12.2 + JDK 25**, **Binwalk 3.1.0** e **Unblob 26.6.4**.
+
+Opções úteis do `setup-all.ps1`:
+```powershell
+.\setup-all.ps1 -Client antigravity -Providers all   # padrão (tudo)
+.\setup-all.ps1 -Providers ghidra                    # apenas Ghidra no WSL
+.\setup-all.ps1 -SkipWsl                             # apenas Windows + Antigravity
+```
+
+Depois de finalizar, **reinicie o Antigravity** para ativar o servidor MCP `rea`.
+
+---
+
 ## Estrutura do repositório
 
+- [`setup-all.ps1`](setup-all.ps1) — Instalador único (Windows + WSL + todos os provedores).
 - [`scripts/setup-windows.ps1`](scripts/setup-windows.ps1) — Instala `rea-agents` no Windows, registra o MCP no cliente escolhido (padrão: `antigravity`) e roda `rea doctor`.
 - [`scripts/setup-wsl-base.sh`](scripts/setup-wsl-base.sh) — Prepara o Ubuntu 24.04 no WSL 2 (`procps`, Node.js 24 via `nvm` e `rea-agents`).
 - [`scripts/setup-wsl-providers.sh`](scripts/setup-wsl-providers.sh) — Instala e configura de forma modular **Ghidra 12.2 + JDK 25**, **Binwalk 3.1.0** e **Unblob 26.6.4** no Ubuntu 24.04.

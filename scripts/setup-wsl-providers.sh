@@ -80,15 +80,20 @@ fi
 
 if [ "$INSTALL_BINWALK" = true ]; then
   echo "==> Instalando Binwalk 3.1.0 (via Rust/Cargo)..."
-  sudo apt install -y build-essential pkg-config libfontconfig1-dev liblzma-dev curl
+  if [ -x "$HOME/.cargo/bin/binwalk" ] && "$HOME/.cargo/bin/binwalk" --version 2>/dev/null | grep -Fq "binwalk 3.1.0"; then
+    echo "    Binwalk 3.1.0 ja esta instalado em $HOME/.cargo/bin/binwalk"
+  else
+    sudo apt install -y build-essential pkg-config libfontconfig1-dev liblzma-dev curl
 
-  if [ ! -f "$HOME/.cargo/env" ]; then
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    if [ ! -f "$HOME/.cargo/env" ]; then
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    fi
+    # shellcheck source=/dev/null
+    . "$HOME/.cargo/env"
+
+    cargo install binwalk@3.1.0
   fi
-  # shellcheck source=/dev/null
-  . "$HOME/.cargo/env"
 
-  cargo install binwalk@3.1.0
   append_line_once 'export REA_BINWALK_COMMAND="$HOME/.cargo/bin/binwalk"'
   export REA_BINWALK_COMMAND="$HOME/.cargo/bin/binwalk"
   "$REA_BINWALK_COMMAND" --version
@@ -116,7 +121,12 @@ if [ "$INSTALL_UNBLOB" = true ]; then
   append_line_once 'export PATH="$HOME/.local/bin:$PATH"'
   export PATH="$HOME/.local/bin:$PATH"
 
-  uv tool install unblob==26.6.4
+  if [ -x "$HOME/.local/bin/unblob" ] && [ "$("$HOME/.local/bin/unblob" --version 2>/dev/null || true)" = "26.6.4" ]; then
+    echo "    Unblob 26.6.4 ja esta instalado em $HOME/.local/bin/unblob"
+  else
+    uv tool install unblob==26.6.4
+  fi
+
   append_line_once 'export REA_UNBLOB_COMMAND="$HOME/.local/bin/unblob"'
   export REA_UNBLOB_COMMAND="$HOME/.local/bin/unblob"
   "$REA_UNBLOB_COMMAND" --version
