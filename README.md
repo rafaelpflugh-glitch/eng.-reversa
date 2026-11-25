@@ -1,6 +1,6 @@
 # REA Setup Kit (Windows + WSL Ubuntu 24.04)
 
-Guia prático e scripts automatizados para instalar, configurar e usar o **[REA (Reverse Engineer Anything)](https://github.com/morluto/rea)** no **Windows** (conectado ao **Antigravity** e outros agentes via MCP) e no **WSL 2 (Ubuntu 24.04)** com provedores avançados (**Ghidra 12.2 + JDK 25**, **Binwalk 3.1.0** e **Unblob 26.6.4**).
+Guia prático e scripts automatizados para instalar, configurar e usar o **[REA (Reverse Engineer Anything)](https://github.com/morluto/rea)** no **Windows** (conectado ao **Antigravity** e outros agentes via MCP) e no **WSL 2 (Ubuntu 24.04)** com a suíte completa de provedores Linux — incluindo ponte MCP direta **`rea-wsl`** para o Antigravity no Windows.
 
 > **Sobre o REA:** o REA não tem uma janela gráfica própria. Ele é uma caixa de ferramentas de engenharia reversa (CLI + servidor **MCP**) usada pelo terminal ou diretamente dentro de agentes de IA (como Antigravity, Claude Code, Codex, Cursor e VS Code).
 
@@ -17,113 +17,69 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 .\setup-all.ps1
 ```
 
-O `setup-all.ps1` cuida de tudo em sequência (e pode ser rodado novamente sem problema caso o Windows peça para reiniciar após instalar o Node.js ou o WSL):
-1. Verifica/instala **Node.js** suportado, instala `rea-agents` globalmente e configura o MCP no **Antigravity**.
+O `setup-all.ps1` faz tudo em sequência (e é **idempotente** — se o Windows pedir reinicialização após instalar o Node.js ou o WSL, basta rodar `.\setup-all.ps1` novamente):
+
+1. Verifica/instala **Node.js**, instala `rea-agents` (+ suporte a **Frida**) no Windows e configura o MCP `rea` no **Antigravity**.
 2. Verifica/instala o **WSL 2 + Ubuntu 24.04** e define como padrão.
-3. Dentro do Ubuntu 24.04, instala **Node 24**, **REA**, **Ghidra 12.2 + JDK 25**, **Binwalk 3.1.0** e **Unblob 26.6.4**.
+3. Dentro do Ubuntu 24.04, instala **Node 24**, **REA** e **todos os provedores** (`~/.rea-env.sh` + launcher `~/.local/bin/rea-wsl-mcp`).
+4. Registra o segundo servidor MCP **`rea-wsl`** no Antigravity (`~/.gemini/config/mcp_config.json`), permitindo acionar Ghidra Linux, Binwalk, Unblob, Rizin, GDB, Wakaru, JADX, TShark, WABT e sigrok-cli direto do chat no Windows.
 
 Opções úteis do `setup-all.ps1`:
 ```powershell
-.\setup-all.ps1 -Client antigravity -Providers all   # padrão (tudo)
-.\setup-all.ps1 -Providers ghidra                    # apenas Ghidra no WSL
-.\setup-all.ps1 -SkipWsl                             # apenas Windows + Antigravity
+.\setup-all.ps1                                       # instala tudo (padrão)
+.\setup-all.ps1 -Providers ghidra,binwalk,unblob      # escolhe só alguns provedores no WSL
+.\setup-all.ps1 -NoFrida                              # pula os scripts nativos do Frida
+.\setup-all.ps1 -SkipWsl                              # apenas Windows + Antigravity
+.\setup-all.ps1 -SkipWslMcp                           # não registra o servidor rea-wsl no Antigravity
 ```
 
-Depois de finalizar, **reinicie o Antigravity** para ativar o servidor MCP `rea`.
+Depois de finalizar, **reinicie o Antigravity** para ativar os servidores MCP `rea` e `rea-wsl`.
+
+---
+
+## Suíte de provedores incluída (`scripts/setup-wsl-providers.sh`)
+
+Todas as variáveis de ambiente ficam centralizadas em `~/.rea-env.sh` (carregado automaticamente pelo `~/.bashrc` e pelo servidor MCP `rea-wsl`).
+
+| Flag | Ferramentas & versões | O que desbloqueia no REA |
+| --- | --- | --- |
+| `--ghidra` | **Ghidra 12.2** + **OpenJDK 25** + **Checkpoints** (`REA_GHIDRA_CHECKPOINT_DIR`) | Decompilação de binários nativos (ELF, PE, ARM, MIPS, x86/x64) com cache persistente de análise |
+| `--binwalk` | **Binwalk 3.1.0** (`REA_BINWALK_COMMAND`) | Inspeção de regiões em imagens de firmware (`inspect_firmware_regions`) |
+| `--unblob` | **Unblob 26.6.4** (`REA_UNBLOB_COMMAND`) + extratores | Extração de contêineres e firmwares (`extract_firmware`) |
+| `--native-tools` | **GDB**, GNU **`objdump`**, **Rizin 0.9.1**, **`pwntools` 4.15.0** | Disassembly rápido, sessões de debug persistentes, layout ELF e análise de crash/core dumps |
+| `--js` | **Wakaru 1.14.0** *(SHA-256 verificado)* | Recuperação/desminificação de bundles JavaScript (`recover_javascript_sources`) |
+| `--android` | **JADX Headless MCP 0.7.1** *(SHA-256 verificado)* + **Apktool** + **ADB** | Decompilação de classes/métodos de APKs, recursos/manifesto e inspeção de dispositivos |
+| `--network` | **TShark 4.x** + **`capinfos`** + **`mitmproxy`** | Análise de `.pcap`/`.pcapng`, DNS, TLS SNI e comparação com endpoints estáticos |
+| `--wasm` | **WABT 1.0.42** (`REA_WABT_BIN_DIRECTORY`) | Validação e decodificação de módulos `.wasm` para WAT (`inspect_wasm_artifact`) |
+| `--signals` | **`sigrok-cli` 0.7.2** (`REA_SIGROK_COMMAND`) | Decodificação de capturas de analisador lógico (SPI, I2C, UART etc.) |
+| `--frida` | **Frida** (`--allow-scripts=frida`) | Instrumentação dinâmica em processos em execução (`instrument_with_frida`) |
+| `--all` | Todos os itens acima | Suíte completa |
 
 ---
 
 ## Estrutura do repositório
 
-- [`setup-all.ps1`](setup-all.ps1) — Instalador único (Windows + WSL + todos os provedores).
-- [`scripts/setup-windows.ps1`](scripts/setup-windows.ps1) — Instala `rea-agents` no Windows, registra o MCP no cliente escolhido (padrão: `antigravity`) e roda `rea doctor`.
-- [`scripts/setup-wsl-base.sh`](scripts/setup-wsl-base.sh) — Prepara o Ubuntu 24.04 no WSL 2 (`procps`, Node.js 24 via `nvm` e `rea-agents`).
-- [`scripts/setup-wsl-providers.sh`](scripts/setup-wsl-providers.sh) — Instala e configura de forma modular **Ghidra 12.2 + JDK 25**, **Binwalk 3.1.0** e **Unblob 26.6.4** no Ubuntu 24.04.
+- [`setup-all.ps1`](setup-all.ps1) — Instalador único (Windows + WSL + todos os provedores + `rea-wsl` MCP).
+- [`scripts/setup-windows.ps1`](scripts/setup-windows.ps1) — Instala `rea-agents` no Windows, registra o MCP no cliente escolhido e roda `rea doctor`.
+- [`scripts/register-wsl-mcp.ps1`](scripts/register-wsl-mcp.ps1) — Adiciona/atualiza o servidor MCP `rea-wsl` em `~/.gemini/config/mcp_config.json`.
+- [`scripts/setup-wsl-base.sh`](scripts/setup-wsl-base.sh) — Prepara o Ubuntu 24.04 (`procps`, `nvm` + Node 24, `rea-agents`, `~/.rea-env.sh` e `~/.local/bin/rea-wsl-mcp`).
+- [`scripts/setup-wsl-providers.sh`](scripts/setup-wsl-providers.sh) — Instala e configura de forma modular os provedores avançados no Ubuntu 24.04.
 - [`docs/cheatsheet.md`](docs/cheatsheet.md) — Guia rápido de comandos CLI e exemplos de prompts para usar no Antigravity.
 
 ---
 
-## 1. Setup no Windows (CLI + MCP no Antigravity)
-
-### Pré-requisitos
-- **Node.js** `22.23.4+`, `24.22.1+` ou `26.12.1+`
-- PowerShell com permissão para scripts locais:
-  ```powershell
-  Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-  ```
-
-### Execução
-```powershell
-.\scripts\setup-windows.ps1 -Client antigravity
-```
-
-Depois de aprovar o plano do `rea setup`, **reinicie o Antigravity** para carregar o servidor MCP `rea` e a skill `reverse-engineer-anything`.
-
-*(Se o `rea doctor` acusar uma entrada manual antiga como `foreign` em `~/.gemini/config/mcp_config.json`, remova a entrada `"rea"` antiga e rode `rea setup --client antigravity` novamente.)*
-
----
-
-## 2. Setup do WSL 2 (Ubuntu 24.04)
-
-No PowerShell (como Administrador), instale o Ubuntu 24.04 e defina como padrão:
-
-```powershell
-wsl --update
-wsl --set-default-version 2
-wsl --install -d Ubuntu-24.04
-wsl --set-default Ubuntu-24.04
-```
-
-Depois, dentro do terminal do **Ubuntu 24.04**, instale a base (Node 24 + `procps` + REA):
-
-```bash
-chmod +x scripts/setup-wsl-base.sh scripts/setup-wsl-providers.sh
-./scripts/setup-wsl-base.sh
-```
-
----
-
-## 3. Provedores avançados no Ubuntu 24.04 (WSL)
-
-Você pode instalar tudo de uma vez ou escolher apenas os provedores desejados:
-
-```bash
-# Instalar todos (Ghidra 12.2 + JDK 25, Binwalk 3.1.0 e Unblob 26.6.4)
-./scripts/setup-wsl-providers.sh --all
-
-# Ou individualmente:
-./scripts/setup-wsl-providers.sh --ghidra
-./scripts/setup-wsl-providers.sh --binwalk
-./scripts/setup-wsl-providers.sh --unblob
-```
-
-Após concluir, recarregue o shell e valide:
-
-```bash
-source ~/.bashrc
-rea doctor --provider ghidra
-rea providers
-```
-
-| Provedor | Versão verificada pelo REA | Uso principal |
-| --- | --- | --- |
-| **Ghidra + JDK** | Ghidra `12.2` + OpenJDK `25` | Decompilação e análise de binários nativos (ELF, PE, ARM, MIPS, x86/x64) |
-| **Binwalk** | `3.1.0` (`REA_BINWALK_COMMAND`) | Inspeção de regiões em imagens de firmware (`rea inspect-firmware-regions`) |
-| **Unblob** | `26.6.4` (`REA_UNBLOB_COMMAND`) | Extração de contêineres e firmwares (`rea extract-firmware`) |
-
----
-
-## 4. Como usar no dia a dia
+## Como usar no dia a dia
 
 Veja o guia de bolso completo em [`docs/cheatsheet.md`](docs/cheatsheet.md).
 
-- **No Antigravity:** basta pedir em português apontando o caminho local do alvo, ex.:
-  > *"Use o REA para inspecionar `C:\caminho\do\app`, identificar a stack e listar os arquivos principais com evidências."*
-- **Na CLI:**
-  ```powershell
-  rea doctor --client antigravity
-  rea inspect-artifact "C:\caminho\arquivo"
-  rea analyze-javascript-application "C:\caminho\app" --json > app-evidence.json
+- **No Antigravity (via `rea` ou `rea-wsl`):**
+  > *"Use o REA (`rea-wsl`) para inspecionar `/home/pflug/analises/alvo` e me mostrar as evidências."*
+- **Validação rápida no Ubuntu (WSL):**
+  ```bash
+  source ~/.bashrc
+  rea doctor --provider ghidra
+  rea doctor --provider jadx
+  rea providers
   ```
 
 ---

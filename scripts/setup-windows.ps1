@@ -3,10 +3,13 @@
     Instala o REA (rea-agents) no Windows e configura a integracao MCP no agente selecionado.
 .EXAMPLE
     .\scripts\setup-windows.ps1 -Client antigravity
+.EXAMPLE
+    .\scripts\setup-windows.ps1 -Client antigravity -WithFrida
 #>
 [CmdletBinding()]
 param(
     [string]$Client = "antigravity",
+    [switch]$WithFrida,
     [switch]$SkipSetup
 )
 
@@ -20,7 +23,11 @@ if (-not $nodeVersionRaw) {
 Write-Host "    Node detectado: $nodeVersionRaw"
 
 Write-Host "==> Instalando/atualizando rea-agents globalmente..." -ForegroundColor Cyan
-& npm.cmd install --global rea-agents
+if ($WithFrida) {
+    & npm.cmd install --global --allow-scripts=frida rea-agents
+} else {
+    & npm.cmd install --global rea-agents
+}
 
 Write-Host "==> Verificando CLI do REA..." -ForegroundColor Cyan
 $reaVersion = (& rea --version).Trim()

@@ -1,31 +1,49 @@
 <#
 .SYNOPSIS
     Instala todo o ambiente REA em um PC Windows novo:
-    1) Node.js (verifica/instala) + rea-agents + MCP no Antigravity
+    1) Node.js (verifica/instala) + rea-agents (+ Frida) + MCP no Antigravity
     2) WSL 2 + Ubuntu 24.04
-    3) Dentro do Ubuntu: Node 24 + REA + Ghidra 12.2 + JDK 25 + Binwalk 3.1.0 + Unblob 26.6.4
+    3) Dentro do Ubuntu: Node 24 + REA + todos os provedores (Ghidra 12.2 + checkpoints,
+       Binwalk 3.1.0, Unblob 26.6.4, Rizin, GDB, objdump, pwntools, Wakaru, JADX,
+       Apktool, ADB, TShark, mitmproxy, WABT, sigrok-cli, Frida)
+    4) Registra tambem o servidor MCP "rea-wsl" no Antigravity
 .DESCRIPTION
     Script idempotente: se precisar reiniciar o Windows apos instalar o WSL ou o Node,
     basta rodar .\setup-all.ps1 novamente que ele continua de onde parou.
 .EXAMPLE
     .\setup-all.ps1
 .EXAMPLE
-    .\setup-all.ps1 -Client antigravity -Providers all
+    .\setup-all.ps1 -Providers ghidra,binwalk,unblob
 .EXAMPLE
     .\setup-all.ps1 -SkipWsl
 #>
 [CmdletBinding()]
 param(
     [string]$Client = "antigravity",
-    [ValidateSet("all", "ghidra", "binwalk", "unblob", "none")]
-    [string]$Providers = "all",
+    [string[]]$Providers = @("all"),
     [string]$WslDistro = "Ubuntu-24.04",
+    [switch]$NoFrida,
     [switch]$SkipWindows,
-    [switch]$SkipWsl
+    [switch]$SkipWsl,
+    [switch]$SkipWslMcp
 )
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = $PSScriptRoot
+
+$ValidProviders = @("all", "ghidra", "binwalk", "unblob", "native-tools", "js", "android", "network", "wasm", "signals", "frida", "none")
+$NormalizedProviders = @()
+foreach ($item in $Providers) {
+    foreach ($part in ($item -split ',')) {
+        $p = $part.Trim().ToLowerInvariant()
+        if ($p -ne "") {
+            if ($ValidProviders -notcontains $p) {
+                throw "Provedor invalido: '$p'. Validos: $($ValidProviders -join ', ')"
+            }
+            $NormalizedProviders += $p
+        }
+    }
+}
 
 function Test-SupportedNode {
     $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
@@ -56,7 +74,7 @@ Write-Host "====================================================" -ForegroundCol
 # --- ETAPA 1: WINDOWS ---
 if (-not $SkipWindows) {
     Write-Host ""
-    Write-Host "[1/3] Configurando Windows + REA + MCP ($Client)..." -ForegroundColor Yellow
+    Write-Host "[1/4] Configurando Windows + REA + MCP ($Client)..." -ForegroundColor Yellow
 
     if (-not (Test-SupportedNode)) {
         Write-Host "Node.js suportado (22.23.4+, 24.22.1+ ou 26.12.1+) nao encontrado." -ForegroundColor Yellow
@@ -71,13 +89,17 @@ if (-not $SkipWindows) {
         }
     }
 
-    & "$RepoRoot\scripts\setup-windows.ps1" -Client $Client
+    if ($NoFrida) {
+        & "$RepoRoot\scripts\setup-windows.ps1" -Client $Client
+    } else {
+        & "$RepoRoot\scripts\setup-windows.ps1" -Client $Client -WithFrida
+    }
 }
 
 # --- ETAPA 2: WSL UBUNTU 24.04 ---
 if (-not $SkipWsl) {
     Write-Host ""
-    Write-Host "[2/3] Verificando WSL 2 ($WslDistro)..." -ForegroundColor Yellow
+    Write-Host "[2/4] Verificando WSL 2 ($WslDistro)..." -ForegroundColor Yellow
 
     if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {
         throw "Comando 'wsl' nao encontrado. Ative o WSL no Windows e rode .\setup-all.ps1 novamente."
@@ -100,21 +122,29 @@ if (-not $SkipWsl) {
     & wsl --set-default $WslDistro | Out-Null
 
     Write-Host ""
-    Write-Host "[3/3] Instalando REA e provedores ($Providers) dentro do $WslDistro..." -ForegroundColor Yellow
+    Write-Host "[3/4] Instalando REA e provedores ($($NormalizedProviders -join ', ')) dentro do $WslDistro..." -ForegroundColor Yellow
     Write-Host "      (O sudo dentro do Ubuntu pode pedir sua senha do Linux.)" -ForegroundColor DarkGray
 
     $wslRepo = Convert-ToWslPath $RepoRoot
-    & wsl -d $WslDistro -- bash -c "cd '$wslRepo' && bash scripts/setup-wsl-base.sh"
+    $baseArgs = if ($NoFrida) { "" } else { "--with-frida" }
+    & wsl -d $WslDistro -- bash -c "cd '$wslRepo' && bash scripts/setup-wsl-base.sh $baseArgs"
 
-    if ($Providers -ne "none") {
-        $flag = "--$Providers"
-        & wsl -d $WslDistro -- bash -c "cd '$wslRepo' && bash scripts/setup-wsl-providers.sh $flag"
+    if ($NormalizedProviders -notcontains "none" -and $NormalizedProviders.Count -gt 0) {
+        $flags = ($NormalizedProviders | ForEach-Object { "--$_" }) -join " "
+        & wsl -d $WslDistro -- bash -c "cd '$wslRepo' && bash scripts/setup-wsl-providers.sh $flags"
+    }
+
+    # --- ETAPA 4: REGISTRAR MCP rea-wsl NO ANTIGRAVITY ---
+    if (-not $SkipWslMcp -and $Client -eq "antigravity") {
+        Write-Host ""
+        Write-Host "[4/4] Registrando servidor MCP 'rea-wsl' no Antigravity..." -ForegroundColor Yellow
+        & "$RepoRoot\scripts\register-wsl-mcp.ps1" -WslDistro $WslDistro
     }
 }
 
 Write-Host ""
 Write-Host "====================================================" -ForegroundColor Green
 Write-Host "  Tudo pronto!                                      " -ForegroundColor Green
-Write-Host "  - Reinicie o $Client para ativar o MCP do REA.    " -ForegroundColor Green
-Write-Host "  - No Ubuntu (WSL), rode: rea doctor --provider ghidra" -ForegroundColor Green
+Write-Host "  - Reinicie o $Client para ativar 'rea' e 'rea-wsl'." -ForegroundColor Green
+Write-Host "  - No Ubuntu (WSL), rode: rea providers            " -ForegroundColor Green
 Write-Host "====================================================" -ForegroundColor Green
